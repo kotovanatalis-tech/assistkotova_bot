@@ -99,7 +99,9 @@ const send = (env, chat, text, markup) =>
   tg(env, 'sendMessage', { chat_id: chat, text, parse_mode: 'HTML', disable_web_page_preview: true, ...(markup ? { reply_markup: markup } : {}) });
 const edit = (env, chat, mid, text, markup) =>
   tg(env, 'editMessageText', { chat_id: chat, message_id: mid, text, parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: markup || { inline_keyboard: [] } });
-const appBtn = (env, text, query = '') => ({ text, web_app: { url: env.__base + '/' + query } });
+const appBtn = (env, text, query = '') => (/^https:\/\//.test(env.__base || '')
+  ? { text, web_app: { url: env.__base + '/' + query } }
+  : { text: text + ' (нет домена)', callback_data: 'nodomain' });
 const MAIN_KB = {
   keyboard: [[{ text: '😴 Малыш уснул' }, { text: '📋 Дела на сегодня' }], [{ text: '➕ Доход' }, { text: '📅 Ближайшее' }]],
   resize_keyboard: true, is_persistent: true,
@@ -328,7 +330,7 @@ async function onMessage(env, m) {
   let owner = await getOwner(env);
   const text = (m.text || '').trim();
   if (!owner && text.startsWith('/start')) { await kvSet(env, 'owner', from); await kvSet(env, 'chat', chat); owner = String(from); }
-  if (String(from) !== String(owner)) return send(env, chat, 'Это личный бот 🙂');
+  if (String(from) !== String(owner)) { console.log(`Сообщение от чужого id ${from}, владелец: ${owner}`); return send(env, chat, 'Это личный бот 🙂'); }
   if (env.OWNER_ID && !(await kvGet(env, 'owner'))) await kvSet(env, 'owner', from);
   if (m.chat.type !== 'private') return;
   await kvSet(env, 'chat', chat);
@@ -368,6 +370,7 @@ async function onCallback(env, cq) {
   if (String(cq.from.id) !== String(owner)) return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id });
   const chat = cq.message.chat.id, mid = cq.message.message_id;
   const [act, a, b] = cq.data.split(':');
+  if (act === 'nodomain') return tg(env, 'answerCallbackQuery', { callback_query_id: cq.id, show_alert: true, text: 'Приложение пока не подключено: в Railway нужно создать домен (Settings → Networking → Generate Domain) и перезапустить деплой.' });
   const id = +a;
   let toast = '';
   const t = today();
@@ -805,7 +808,9 @@ export default {
       if (!env.WEBHOOK_SECRET || url.searchParams.get('key') !== env.WEBHOOK_SECRET)
         return new Response('Добавь в конец адреса ?key= и твой WEBHOOK_SECRET', { status: 403, headers: { 'content-type': 'text/plain; charset=utf-8' } });
       await kvSet(env, 'base', url.origin); env.__base = url.origin;
-      const r1 = await tg(env, 'setWebhook', { url: url.origin + '/webhook', secret_token: env.WEBHOOK_SECRET, allowed_updates: ['message', 'callback_query'], drop_pending_updates: true });
+      const r1 = url.searchParams.get('poll')
+        ? { ok: true }
+        : await tg(env, 'setWebhook', { url: url.origin + '/webhook', secret_token: env.WEBHOOK_SECRET, allowed_updates: ['message', 'callback_query'], drop_pending_updates: true });
       const r2 = await tg(env, 'setChatMenuButton', { menu_button: { type: 'web_app', text: 'Планер', web_app: { url: url.origin + '/' } } });
       const r3 = await tg(env, 'setMyCommands', { commands: [{ command: 'start', description: 'Подсказка и клавиатура' }, { command: 'app', description: 'Открыть планер' }] });
       const ok = r1.ok && r2.ok;
@@ -819,7 +824,6 @@ export default {
     ctx.waitUntil((async () => {
       await init(env);
       env.__base = (await kvGetSafe(env, 'base')) || '';
-      if (!env.__base) return;
       await tick(env);
     })());
   },
