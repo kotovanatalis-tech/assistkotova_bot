@@ -1,0 +1,17 @@
+{
+  "name": "planner-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Личный планер: Telegram-бот и мини-приложение",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js"
+  },
+  "dependencies": {
+    "pdfjs-dist": "4.10.38"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
